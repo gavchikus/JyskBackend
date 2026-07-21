@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>JyskBackend</name>
+    </assembly>
+    <members>
+        <member name="M:JyskBackend.Controllers.AuthController.Register(JyskBackend.Models.Responses.RegisterRequest)">
+            <summary>
+            Реєстрація нового покупця в системі магазину JYSK.
+            </summary>
+            <param name="req">Об'єкт з даними реєстрації (Ім'я, Email, Пароль тощо)</param>
+            <returns>JWT токен та інформація про створений профіль</returns>
+            <response code="201">Користувача успішно створено, токен згенеровано</response>
+            <response code="409">Помилка конфлікту: користувач з таким Email вже існує</response>
+        </member>
+        <member name="M:JyskBackend.Controllers.AuthController.Login(JyskBackend.Models.Responses.LoginRequest)">
+            <summary>
+            Автентифікація (Вхід) користувача за логіном та паролем.
+            </summary>
+            <param name="req">Модель, що містить Email та пароль</param>
+            <returns>JWT токен доступу Bearer</returns>
+            <response code="200">Успішний вхід. Повертає токен для заголовка Authorization</response>
+            <response code="401">Невірний Email або пароль</response>
+        </member>
+        <member name="M:JyskBackend.Controllers.CustomersController.GetMyProfile">
+            <summary>
+            Отримати дані профілю поточного користувача за його JWT токеном.
+            </summary>
+            <returns>Повна інформація про профіль покупця</returns>
+            <response code="200">Профіль успішно знайдено та розпарсено з токена</response>
+            <response code="401">Користувача не знайдено або токен недійсний</response>
+        </member>
+        <member name="T:JyskBackend.Migrations.InitialCreate">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.InitialCreate.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.InitialCreate.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.InitialCreate.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:JyskBackend.Migrations.AddFullCrudArchitecture">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.AddFullCrudArchitecture.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.AddFullCrudArchitecture.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.AddFullCrudArchitecture.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:JyskBackend.Migrations.AddAuthAndSwaggerXmlSupport">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.AddAuthAndSwaggerXmlSupport.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.AddAuthAndSwaggerXmlSupport.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:JyskBackend.Migrations.AddAuthAndSwaggerXmlSupport.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+    </members>
+</doc>

@@ -1,0 +1,6 @@
+@JyskBackend_HostAddress = http://localhost:5118
+
+GET {{JyskBackend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
