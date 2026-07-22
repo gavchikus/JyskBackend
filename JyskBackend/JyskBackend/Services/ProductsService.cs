@@ -98,6 +98,7 @@ public class ProductsService(JyskDbContext context) : IProductsService
     public async Task<List<Product>> GetRelatedProductsAsync(int categoryId, Guid currentProductId, int limit = 4)
     {
         return await context.Products
+            .Include(p => p.Category)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
             .Where(p => p.CategoryId == categoryId && p.Id != currentProductId)
@@ -108,13 +109,15 @@ public class ProductsService(JyskDbContext context) : IProductsService
     public async Task<HomePageProductsResponse> GetHomePageProductsAsync()
     {
         var newProducts = await context.Products
+            .Include(p => p.Category)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
-            .Where(p => p.IsNew) 
+            .Where(p => p.IsNew)
             .Take(8)
             .ToListAsync();
 
         var saleProducts = await context.Products
+            .Include(p => p.Category)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
             .Where(p => p.OldPrice.HasValue && p.OldPrice > p.Price)
@@ -122,6 +125,7 @@ public class ProductsService(JyskDbContext context) : IProductsService
             .ToListAsync();
 
         var recommendedProducts = await context.Products
+            .Include(p => p.Category)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
             .OrderByDescending(p => p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0)
