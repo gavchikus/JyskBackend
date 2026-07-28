@@ -20,13 +20,7 @@ public class ProductsController(IProductsService productsService) : ControllerBa
     {
         var (items, totalCount) = await productsService.GetAllProductsAsync(categoryId, search, minPrice, maxPrice, color, material, isNew, onSale, page, pageSize, sortBy);
 
-        var responseItems = items.Select(p => new ProductShortResponse(
-            p.Id, p.Name, p.Price, p.OldPrice, p.ArticleNumber, p.Brand, p.Color, p.Material, p.Dimensions, p.IsNew, p.CategoryId,
-            p.Category?.Name ?? "Unknown",
-            p.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? p.Images.FirstOrDefault()?.ImageUrl ?? "placeholder.jpg",
-            p.Reviews.Any() ? Math.Round(p.Reviews.Average(r => r.Rating), 1) : 0,
-            p.Reviews.Count
-        )).ToList();
+        var responseItems = ProductMapper.ToShort(items);
 
         var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
         return Ok(new PaginatedList<ProductShortResponse>(responseItems, totalCount, page, pageSize, totalPages));
@@ -41,13 +35,7 @@ public class ProductsController(IProductsService productsService) : ControllerBa
         if (p == null) return NotFound();
 
         var relatedEntities = await ((ProductsService)productsService).GetRelatedProductsAsync(p.CategoryId, p.Id, 4);
-        var relatedProducts = relatedEntities.Select(rp => new ProductShortResponse(
-            rp.Id, rp.Name, rp.Price, rp.OldPrice, rp.ArticleNumber, rp.Brand, rp.Color, rp.Material, rp.Dimensions, rp.IsNew, rp.CategoryId,
-            rp.Category?.Name ?? "Unknown",
-            rp.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? rp.Images.FirstOrDefault()?.ImageUrl ?? "placeholder.jpg",
-            rp.Reviews.Any() ? Math.Round(rp.Reviews.Average(r => r.Rating), 1) : 0,
-            rp.Reviews.Count
-        )).ToList();
+        var relatedProducts = ProductMapper.ToShort(relatedEntities);
 
         var response = new ProductDetailResponse(
             p.Id, p.Name, p.Description, p.Price, p.OldPrice, p.Stock, p.ArticleNumber, p.Brand, p.Color, p.Material, p.Dimensions, p.IsNew, p.IsActive, p.CategoryId,

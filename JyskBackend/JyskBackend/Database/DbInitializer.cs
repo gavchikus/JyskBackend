@@ -1,207 +1,304 @@
 using JyskBackend.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace JyskBackend.Database;
 
+/// <summary>
+/// Наповнення каталогу демо-даними.
+///
+/// Сідер доповнювальний, а не «тільки для порожньої бази»: категорії звіряються
+/// за назвою, товари — за артикулом. Тому нові позиції з'являються при звичайному
+/// перезапуску, без видалення jysk.db, а вже наявні товари не дублюються
+/// й не перезаписуються (правки через адмінку залишаються на місці).
+/// </summary>
 public static class DbInitializer
 {
-    // Базовий шлях Unsplash + параметри масштабування (квадрат 800px, авто-формат).
     private const string U = "https://images.unsplash.com/";
     private const string Q = "?auto=format&fit=crop&w=800&q=80";
 
-    private static ProductImage Img(string photo, bool main = false, int sort = 0) =>
-        new() { ImageUrl = U + photo + Q, IsMain = main, SortOrder = sort };
+    private static string Photo(string id) => U + id + Q;
+
+    /// <summary>Опис товару для сідера. Ключ ідемпотентності — <paramref name="Article"/>.</summary>
+    private record Seed(
+        string Article, string Category, string Name, string Description,
+        decimal Price, decimal? OldPrice, int Stock, bool IsNew,
+        string Brand, string Material, string Color, string Dimensions,
+        string[] Photos
+    );
 
     public static async Task SeedAsync(JyskDbContext context)
     {
-        if (context.Products.Any()) return; // Если база уже не пустая, ничего не делаем
+        var categories = await EnsureCategoriesAsync(context);
+        await EnsureProductsAsync(context, categories);
+    }
 
-        var categories = new List<Category>
+    // ─────────────────────────── Категорії ───────────────────────────
+
+    private static readonly (string Name, string Description, string Photo)[] CategorySeed =
+    [
+        ("Меблі для спальні", "Ліжка, шафи, комоди та тумби для затишної спальні", "photo-1522771739844-6a9f6d5f14af"),
+        ("Вітальня",          "Дивани, крісла, стелажі та декор для вітальні",       "photo-1493663284031-b7e3aefcae8e"),
+        ("Офіс та кабінет",   "Робочі столи та ергономічні крісла для продуктивності", "photo-1518455027359-f3f8164ba6bd"),
+        ("Організація",       "Контейнери, кошики та системи зберігання",            "photo-1584992236310-6edddc08acff"),
+        ("Декор та освітлення", "Вази, свічки, годинники та світильники для настрою", "photo-1578500494198-246f612d3b3d"),
+        ("Електротехніка",    "Розумні пристрої та побутова техніка для дому",       "photo-1558002038-1055907df827"),
+        ("Для саду",          "Все для тераси, балкона й саду",                      "photo-1416879595882-3373a0480b5b"),
+        ("Інструменти",       "Інструменти та набори для дому й майстерні",          "photo-1572981779307-38b8cabb2407"),
+        ("Для свята",         "Гірлянди, сервірування та декор для свят",            "photo-1467810563316-b5476525c0f9"),
+    ];
+
+    private static async Task<Dictionary<string, int>> EnsureCategoriesAsync(JyskDbContext context)
+    {
+        var existing = await context.Categories.ToDictionaryAsync(c => c.Name, c => c);
+
+        foreach (var (name, description, photo) in CategorySeed)
         {
-            new()
+            if (existing.ContainsKey(name)) continue;
+
+            var category = new Category
             {
-                Name = "Меблі для спальні",
-                Description = "Ліжка, шафи, комоди та тумби для затишної спальні",
-                ImageUrl = U + "photo-1522771739844-6a9f6d5f14af" + Q
-            },
-            new()
-            {
-                Name = "Вітальня",
-                Description = "Дивани, крісла, стелажі та декор для вітальні",
-                ImageUrl = U + "photo-1493663284031-b7e3aefcae8e" + Q
-            },
-            new()
-            {
-                Name = "Офіс та кабінет",
-                Description = "Робочі столи та ергономічні крісла для продуктивності",
-                ImageUrl = U + "photo-1518455027359-f3f8164ba6bd" + Q
-            }
-        };
-        context.Categories.AddRange(categories);
+                Name = name,
+                Description = description,
+                ImageUrl = Photo(photo)
+            };
+            context.Categories.Add(category);
+            existing[name] = category;
+        }
+
         await context.SaveChangesAsync();
+        return existing.ToDictionary(kv => kv.Key, kv => kv.Value.Id);
+    }
 
-        int bedroom = categories[0].Id;
-        int living = categories[1].Id;
-        int office = categories[2].Id;
+    // ──────────────────────────── Товари ─────────────────────────────
 
-        var products = new List<Product>
-        {
-            // ─── Спальня ───
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Ліжко кутове JYSK Vedde", CategoryId = bedroom,
-                Description = "Комфортне двоспальне ліжко з м'яким узголів'ям та міцним каркасом.",
-                Price = 11500, OldPrice = 14000, Stock = 12, IsNew = true,
-                ArticleNumber = "JYSK-001", Brand = "JYSK", Material = "ДСП / тканина", Color = "Сірий", Dimensions = "160×200 см",
-                Images = [ Img("photo-1505693416388-ac5ce068fe85", main: true), Img("photo-1616594039964-ae9021a400a0", sort: 1) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Ліжко двоспальне GABEL", CategoryId = bedroom,
-                Description = "Класичне ліжко з натурального дерева для здорового сну.",
-                Price = 9800, Stock = 9, IsNew = false,
-                ArticleNumber = "JYSK-010", Brand = "GABEL", Material = "Масив дуба", Color = "Дуб", Dimensions = "180×200 см",
-                Images = [ Img("photo-1522771739844-6a9f6d5f14af", main: true), Img("photo-1560448204-e02f11c3d0e2", sort: 1) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Шафа розсувна VINTERBRO", CategoryId = bedroom,
-                Description = "Місткa шафа-купе з дзеркалом і трьома секціями.",
-                Price = 15400, OldPrice = 17900, Stock = 6, IsNew = false,
-                ArticleNumber = "JYSK-011", Brand = "JYSK", Material = "ЛДСП", Color = "Білий", Dimensions = "200×220 см",
-                Images = [ Img("photo-1558997519-83ea9252edf8", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Тумба приліжкова NORESUND", CategoryId = bedroom,
-                Description = "Компактна тумба з двома шухлядами.",
-                Price = 2300, Stock = 25, IsNew = true,
-                ArticleNumber = "JYSK-012", Brand = "JYSK", Material = "ДСП", Color = "Дуб сонома", Dimensions = "45×40 см",
-                Images = [ Img("photo-1532372320572-cda25653a26d", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Комод HARLEV", CategoryId = bedroom,
-                Description = "Просторий комод на шість шухляд для спальні чи передпокою.",
-                Price = 6900, OldPrice = 8200, Stock = 10, IsNew = false,
-                ArticleNumber = "JYSK-013", Brand = "GABEL", Material = "МДФ", Color = "Графіт", Dimensions = "120×80 см",
-                Images = [ Img("photo-1595428774223-ef52624120d2", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Дзеркало підлогове STUBBERUP", CategoryId = bedroom,
-                Description = "Велике підлогове дзеркало в тонкій металевій рамі.",
-                Price = 3400, Stock = 14, IsNew = true,
-                ArticleNumber = "JYSK-014", Brand = "JYSK", Material = "Метал / скло", Color = "Чорний", Dimensions = "50×170 см",
-                Images = [ Img("photo-1618220179428-22790b461013", main: true) ]
-            },
+    private static readonly Seed[] ProductSeed =
+    [
+        // ── Меблі для спальні ──
+        new("JYSK-001", "Меблі для спальні", "Ліжко кутове JYSK Vedde",
+            "Комфортне двоспальне ліжко з м'яким узголів'ям та міцним каркасом.",
+            11500, 14000, 12, true, "JYSK", "ДСП / тканина", "Сірий", "160×200 см",
+            ["photo-1505693416388-ac5ce068fe85", "photo-1616594039964-ae9021a400a0"]),
+        new("JYSK-010", "Меблі для спальні", "Ліжко двоспальне GABEL",
+            "Класичне ліжко з натурального дерева для здорового сну.",
+            9800, null, 9, false, "GABEL", "Масив дуба", "Дуб", "180×200 см",
+            ["photo-1522771739844-6a9f6d5f14af", "photo-1560448204-e02f11c3d0e2"]),
+        new("JYSK-011", "Меблі для спальні", "Шафа розсувна VINTERBRO",
+            "Місткa шафа-купе з дзеркалом і трьома секціями.",
+            15400, 17900, 6, false, "JYSK", "ЛДСП", "Білий", "200×220 см",
+            ["photo-1558997519-83ea9252edf8"]),
+        new("JYSK-012", "Меблі для спальні", "Тумба приліжкова NORESUND",
+            "Компактна тумба з двома шухлядами.",
+            2300, null, 25, true, "JYSK", "ДСП", "Дуб сонома", "45×40 см",
+            ["photo-1532372320572-cda25653a26d"]),
+        new("JYSK-013", "Меблі для спальні", "Комод HARLEV",
+            "Просторий комод на шість шухляд для спальні чи передпокою.",
+            6900, 8200, 10, false, "GABEL", "МДФ", "Графіт", "120×80 см",
+            ["photo-1595428774223-ef52624120d2"]),
+        new("JYSK-014", "Меблі для спальні", "Дзеркало підлогове STUBBERUP",
+            "Велике підлогове дзеркало в тонкій металевій рамі.",
+            3400, null, 14, true, "JYSK", "Метал / скло", "Чорний", "50×170 см",
+            ["photo-1618220179428-22790b461013"]),
+        new("TALO-030", "Меблі для спальні", "SOFT Touch Towels",
+            "Набір махрових рушників підвищеної щільності, 3 шт.",
+            890, 1200, 40, true, "TALO", "Бавовна", "Пісочний", "70×140 см",
+            ["photo-1600369671236-e74521d4b6ad"]),
 
-            // ─── Вітальня ───
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Диван розкладний MARIBO", CategoryId = living,
-                Description = "Стильний сірий диван з механізмом «єврокнижка» та нішею для білизни.",
-                Price = 18900, Stock = 5, IsNew = true,
-                ArticleNumber = "JYSK-002", Brand = "MARIBO", Material = "Рогожка", Color = "Сірий", Dimensions = "220×95 см",
-                Images = [ Img("photo-1555041469-a586c61ea9bc", main: true), Img("photo-1493663284031-b7e3aefcae8e", sort: 1) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Диван кутовий VEJLBY", CategoryId = living,
-                Description = "Просторий кутовий диван для великої родини та гостей.",
-                Price = 24500, OldPrice = 28000, Stock = 4, IsNew = false,
-                ArticleNumber = "JYSK-015", Brand = "MARIBO", Material = "Велюр", Color = "Синій", Dimensions = "280×180 см",
-                Images = [ Img("photo-1550254478-ead40cc54513", main: true), Img("photo-1567016432779-094069958ea5", sort: 1) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Крісло м'яке AABENRAA", CategoryId = living,
-                Description = "Затишне крісло для читання з високою спинкою.",
-                Price = 7200, Stock = 11, IsNew = true,
-                ArticleNumber = "JYSK-016", Brand = "JYSK", Material = "Букле", Color = "Молочний", Dimensions = "80×85 см",
-                Images = [ Img("photo-1586023492125-27b2c045efd7", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Журнальний столик FROSTED", CategoryId = living,
-                Description = "Лаконічний журнальний столик зі склом та металевими ніжками.",
-                Price = 3900, OldPrice = 4800, Stock = 18, IsNew = false,
-                ArticleNumber = "JYSK-017", Brand = "JYSK", Material = "Скло / метал", Color = "Прозорий", Dimensions = "100×50 см",
-                Images = [ Img("photo-1499933374294-4584851497cc", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Стелаж BILLUND", CategoryId = living,
-                Description = "Відкритий стелаж на п'ять полиць для книг та декору.",
-                Price = 5400, Stock = 15, IsNew = false,
-                ArticleNumber = "JYSK-018", Brand = "GABEL", Material = "ЛДСП", Color = "Дуб", Dimensions = "80×180 см",
-                Images = [ Img("photo-1594620302200-9a762244a156", main: true), Img("photo-1497366216548-37526070297c", sort: 1) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Килим VISKUM", CategoryId = living,
-                Description = "М'який короткий ворс, приємний на дотик і легкий у догляді.",
-                Price = 2900, Stock = 30, IsNew = true,
-                ArticleNumber = "JYSK-019", Brand = "JYSK", Material = "Поліпропілен", Color = "Бежевий", Dimensions = "160×230 см",
-                Images = [ Img("photo-1600166898405-da9535204843", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Торшер AKSEL", CategoryId = living,
-                Description = "Підлоговий світильник з тканинним абажуром і теплим світлом.",
-                Price = 1850, OldPrice = 2400, Stock = 22, IsNew = false,
-                ArticleNumber = "JYSK-020", Brand = "JYSK", Material = "Метал / тканина", Color = "Чорний", Dimensions = "40×150 см",
-                Images = [ Img("photo-1507473885765-e6ed057f782c", main: true) ]
-            },
+        // ── Вітальня ──
+        new("JYSK-002", "Вітальня", "Диван розкладний MARIBO",
+            "Стильний сірий диван з механізмом «єврокнижка» та нішею для білизни.",
+            18900, null, 5, true, "MARIBO", "Рогожка", "Сірий", "220×95 см",
+            ["photo-1555041469-a586c61ea9bc", "photo-1493663284031-b7e3aefcae8e"]),
+        new("JYSK-015", "Вітальня", "Диван кутовий VEJLBY",
+            "Просторий кутовий диван для великої родини та гостей.",
+            24500, 28000, 4, false, "MARIBO", "Велюр", "Синій", "280×180 см",
+            ["photo-1550254478-ead40cc54513", "photo-1567016432779-094069958ea5"]),
+        new("JYSK-016", "Вітальня", "Крісло м'яке AABENRAA",
+            "Затишне крісло для читання з високою спинкою.",
+            7200, null, 11, true, "JYSK", "Букле", "Молочний", "80×85 см",
+            ["photo-1586023492125-27b2c045efd7"]),
+        new("JYSK-017", "Вітальня", "Журнальний столик FROSTED",
+            "Лаконічний журнальний столик зі склом та металевими ніжками.",
+            3900, 4800, 18, false, "JYSK", "Скло / метал", "Прозорий", "100×50 см",
+            ["photo-1499933374294-4584851497cc"]),
+        new("JYSK-018", "Вітальня", "Стелаж BILLUND",
+            "Відкритий стелаж на п'ять полиць для книг та декору.",
+            5400, null, 15, false, "GABEL", "ЛДСП", "Дуб", "80×180 см",
+            ["photo-1594620302200-9a762244a156", "photo-1497366216548-37526070297c"]),
+        new("JYSK-019", "Вітальня", "Килим VISKUM",
+            "М'який короткий ворс, приємний на дотик і легкий у догляді.",
+            2900, null, 30, true, "JYSK", "Поліпропілен", "Бежевий", "160×230 см",
+            ["photo-1600166898405-da9535204843"]),
+        new("TALO-031", "Вітальня", "COZY Cushion Set",
+            "Набір декоративних подушок із чохлами, що знімаються, 2 шт.",
+            740, 990, 35, true, "TALO", "Льон", "Оливковий", "45×45 см",
+            ["photo-1584100936595-c0654b55a2e2"]),
 
-            // ─── Офіс та кабінет ───
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Стіл робочий Loft Desk", CategoryId = office,
-                Description = "Ергономічний стіл у стилі лофт з металевим каркасом.",
-                Price = 4200, OldPrice = 5500, Stock = 20, IsNew = false,
-                ArticleNumber = "JYSK-003", Brand = "JYSK", Material = "ДСП / метал", Color = "Дуб / чорний", Dimensions = "120×60 см",
-                Images = [ Img("photo-1518455027359-f3f8164ba6bd", main: true), Img("photo-1593062096033-9a26b09da705", sort: 1) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Стіл письмовий AUSTIN", CategoryId = office,
-                Description = "Компактний письмовий стіл з двома шухлядами для дому.",
-                Price = 5600, Stock = 13, IsNew = true,
-                ArticleNumber = "JYSK-021", Brand = "GABEL", Material = "МДФ", Color = "Білий", Dimensions = "110×55 см",
-                Images = [ Img("photo-1524758631624-e2822e304c36", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Крісло офісне TJELE", CategoryId = office,
-                Description = "Офісне крісло з еко-шкіри з регулюванням висоти та підлокітниками.",
-                Price = 6700, OldPrice = 8000, Stock = 8, IsNew = false,
-                ArticleNumber = "JYSK-004", Brand = "JYSK", Material = "Еко-шкіра", Color = "Чорний", Dimensions = "60×60 см",
-                Images = [ Img("photo-1592078615290-033ee584e267", main: true), Img("photo-1567538096630-e0c55bd6374c", sort: 1) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Крісло робоче SVANE", CategoryId = office,
-                Description = "Сітчаста спинка для вентиляції та підтримки спини протягом дня.",
-                Price = 4900, Stock = 16, IsNew = true,
-                ArticleNumber = "JYSK-022", Brand = "JYSK", Material = "Сітка / пластик", Color = "Сірий", Dimensions = "58×58 см",
-                Images = [ Img("photo-1519947486511-46149fa0a254", main: true) ]
-            },
-            new()
-            {
-                Id = Guid.NewGuid(), Name = "Стілець ергономічний HERNING", CategoryId = office,
-                Description = "Легкий стілець з дерев'яними ніжками для кабінету чи кухні.",
-                Price = 3200, Stock = 24, IsNew = false,
-                ArticleNumber = "JYSK-023", Brand = "GABEL", Material = "Дерево / тканина", Color = "Гірчичний", Dimensions = "45×80 см",
-                Images = [ Img("photo-1503602642458-232111445657", main: true) ]
-            }
-        };
+        // ── Офіс та кабінет ──
+        new("JYSK-003", "Офіс та кабінет", "Стіл робочий Loft Desk",
+            "Ергономічний стіл у стилі лофт з металевим каркасом.",
+            4200, 5500, 20, false, "JYSK", "ДСП / метал", "Дуб / чорний", "120×60 см",
+            ["photo-1518455027359-f3f8164ba6bd", "photo-1593062096033-9a26b09da705"]),
+        new("JYSK-021", "Офіс та кабінет", "Стіл письмовий AUSTIN",
+            "Компактний письмовий стіл з двома шухлядами для дому.",
+            5600, null, 13, true, "GABEL", "МДФ", "Білий", "110×55 см",
+            ["photo-1524758631624-e2822e304c36"]),
+        new("JYSK-004", "Офіс та кабінет", "Крісло офісне TJELE",
+            "Офісне крісло з еко-шкіри з регулюванням висоти та підлокітниками.",
+            6700, 8000, 8, false, "JYSK", "Еко-шкіра", "Чорний", "60×60 см",
+            ["photo-1592078615290-033ee584e267", "photo-1567538096630-e0c55bd6374c"]),
+        new("JYSK-022", "Офіс та кабінет", "Крісло робоче SVANE",
+            "Сітчаста спинка для вентиляції та підтримки спини протягом дня.",
+            4900, null, 16, true, "JYSK", "Сітка / пластик", "Сірий", "58×58 см",
+            ["photo-1519947486511-46149fa0a254"]),
+        new("JYSK-023", "Офіс та кабінет", "Стілець ергономічний HERNING",
+            "Легкий стілець з дерев'яними ніжками для кабінету чи кухні.",
+            3200, null, 24, false, "GABEL", "Дерево / тканина", "Гірчичний", "45×80 см",
+            ["photo-1503602642458-232111445657"]),
 
-        // Рознесемо CreatedAt, щоб блок «Новинки» мав осмислений порядок (перші — найновіші).
+        // ── Організація ──
+        new("TALO-001", "Організація", "KITCHY FreshBox",
+            "Контейнери для зберігання продуктів, 5 шт. Для кухні та холодильника.",
+            349, 720, 60, true, "KITCHY", "Пластик / скло", "Прозорий", "Набір 5 шт.",
+            ["photo-1584992236310-6edddc08acff"]),
+        new("TALO-002", "Організація", "WOVEN Basket L",
+            "Плетений кошик для білизни, іграшок або пледів.",
+            560, 780, 45, false, "TALO", "Джут", "Натуральний", "40×45 см",
+            ["photo-1584589167171-541ce45f1eea"]),
+
+        // ── Декор та освітлення ──
+        new("TALO-003", "Декор та освітлення", "VERRA CalmSet",
+            "Набір керамічних ваз лаконічної форми, 3 шт.",
+            690, 860, 28, true, "VERRA", "Кераміка", "Молочний", "Набір 3 шт.",
+            ["photo-1578500494198-246f612d3b3d"]),
+        new("JYSK-020", "Декор та освітлення", "Торшер AKSEL",
+            "Підлоговий світильник з тканинним абажуром і теплим світлом.",
+            1850, 2400, 22, false, "JYSK", "Метал / тканина", "Чорний", "40×150 см",
+            ["photo-1507473885765-e6ed057f782c"]),
+        new("TALO-004", "Декор та освітлення", "CANDELA Soy Set",
+            "Ароматичні соєві свічки з дерев'яним ґнотом, 3 шт.",
+            420, 560, 70, true, "CANDELA", "Соєвий віск", "Кремовий", "Набір 3 шт.",
+            ["photo-1602874801007-bd458bb1b8b6"]),
+        new("TALO-005", "Декор та освітлення", "TEMPO Wall Clock",
+            "Настінний годинник з безшумним механізмом.",
+            780, null, 33, false, "TEMPO", "Метал / скло", "Чорний", "Ø 30 см",
+            ["photo-1563861826100-9cb868fdbe1c"]),
+
+        // ── Електротехніка ──
+        new("TALO-006", "Електротехніка", "NEXO Plug Smart",
+            "Розумна Wi-Fi розетка з таймером. Керується через смартфон.",
+            590, 1320, 50, true, "NEXO", "Пластик", "Білий", "5×5 см",
+            ["photo-1558002038-1055907df827"]),
+        new("TALO-007", "Електротехніка", "MOVA Glow Mini",
+            "Компактний LED-нічник з датчиком руху для спальні чи коридору.",
+            420, 999, 55, true, "MOVA", "Пластик", "Білий", "8×12 см",
+            ["photo-1513506003901-1e6a229e2d15"]),
+        new("TALO-008", "Електротехніка", "AURA Steam Kettle",
+            "Електрочайник з контролем температури та швидким нагрівом.",
+            1290, 1690, 26, false, "AURA", "Сталь / скло", "Сталевий", "1.7 л",
+            ["photo-1594213114663-d94db9b17125"]),
+        new("TALO-009", "Електротехніка", "VITA Blend Pro",
+            "Потужний блендер для смузі, супів і горіхового молока.",
+            2190, 2800, 18, true, "VITA", "Пластик / сталь", "Чорний", "1.5 л",
+            ["photo-1570222094114-d054a817e56b"]),
+
+        // ── Для саду ──
+        new("TALO-010", "Для саду", "PICARO SoftMat",
+            "Великий водонепроникний плед для пікніка. Складається у сумку.",
+            690, 1200, 38, true, "PICARO", "Поліестер", "Хакі", "200×140 см",
+            ["photo-1533105079780-92b9be482077"]),
+        new("TALO-011", "Для саду", "GROW Herb Garden",
+            "Розумний домашній міні-сад для зелені з підсвіткою.",
+            1890, 2400, 15, true, "GROW", "Пластик", "Білий", "35×25 см",
+            ["photo-1466692476868-aef1dfb1e735"]),
+        new("TALO-012", "Для саду", "VERDA Hose Roll",
+            "Садовий шланг на котушці з регульованим розпилювачем.",
+            980, null, 22, false, "VERDA", "Гума / пластик", "Зелений", "20 м",
+            ["photo-1416879595882-3373a0480b5b"]),
+        new("TALO-013", "Для саду", "GRILLA Compact",
+            "Компактний вугільний гриль для тераси й пікніка.",
+            1650, 2100, 12, false, "GRILLA", "Сталь", "Чорний", "45×60 см",
+            ["photo-1555939594-58d7cb561ad1"]),
+        new("TALO-014", "Для саду", "BOTANI Planter",
+            "Кашпо на ніжках для кімнатних і балконних рослин.",
+            540, null, 40, true, "BOTANI", "Кераміка / дерево", "Теракота", "Ø 24 см",
+            ["photo-1485955900006-10f4d324d411"]),
+
+        // ── Інструменти ──
+        new("TALO-015", "Інструменти", "FIXON MultiPro X",
+            "Акумуляторний набір інструментів для дому з кейсом.",
+            2450, 3100, 17, true, "FIXON", "Сталь / пластик", "Хакі", "Набір 24 предмети",
+            ["photo-1572981779307-38b8cabb2407"]),
+
+        // ── Для свята ──
+        new("TALO-016", "Для свята", "LUMI String Air",
+            "Гірлянда-роса на 200 LED з теплим світлом для декору кімнати чи балкона.",
+            229, 590, 80, true, "LUMI", "Мідний дріт", "Теплий білий", "20 м",
+            ["photo-1512389142860-9c449e58a543"]),
+        new("TALO-017", "Для свята", "FESTA Party Lights",
+            "Вулична гірлянда з лампами для тераси та вечірок.",
+            640, 890, 42, false, "FESTA", "Пластик / скло", "Прозорий", "10 м",
+            ["photo-1467810563316-b5476525c0f9"]),
+        new("TALO-018", "Для свята", "ROUND Dinnerware",
+            "Набір керамічного посуду для сервірування на 4 персони.",
+            1180, 1490, 24, true, "TALO", "Кераміка", "Бежевий", "16 предметів",
+            ["photo-1578749556568-bc2c40e68b61"]),
+        new("TALO-019", "Для свята", "TABLE Fest Set",
+            "Сервірувальний набір: доріжка, серветки та підставки.",
+            520, null, 36, false, "TALO", "Льон", "Оливковий", "Набір 8 предметів",
+            ["photo-1493857671505-72967e2e2760"]),
+        new("TALO-020", "Для свята", "SCENT Aroma Diffuser",
+            "Аромадифузор з ефектом живого полум'я та автовимкненням.",
+            1340, 1780, 21, true, "SCENT", "Пластик / дерево", "Чорний", "Ø 15 см",
+            ["photo-1608571423902-eed4a5ad8108"]),
+    ];
+
+    private static async Task EnsureProductsAsync(JyskDbContext context, Dictionary<string, int> categories)
+    {
+        var existingArticles = await context.Products
+            .Where(p => p.ArticleNumber != null)
+            .Select(p => p.ArticleNumber!)
+            .ToListAsync();
+        var known = existingArticles.ToHashSet();
+
+        var toAdd = ProductSeed.Where(s => !known.Contains(s.Article)).ToList();
+        if (toAdd.Count == 0) return;
+
+        // CreatedAt рознесений у часі, щоб блок «Новинки» мав осмислений порядок:
+        // перші в списку — найсвіжіші.
         var now = DateTime.UtcNow;
-        for (int i = 0; i < products.Count; i++)
-            products[i].CreatedAt = now.AddMinutes(-i);
 
-        context.Products.AddRange(products);
+        for (int i = 0; i < toAdd.Count; i++)
+        {
+            var s = toAdd[i];
+            if (!categories.TryGetValue(s.Category, out var categoryId)) continue;
+
+            context.Products.Add(new Product
+            {
+                Id = Guid.NewGuid(),
+                Name = s.Name,
+                Description = s.Description,
+                Price = s.Price,
+                OldPrice = s.OldPrice,
+                Stock = s.Stock,
+                IsNew = s.IsNew,
+                ArticleNumber = s.Article,
+                Brand = s.Brand,
+                Material = s.Material,
+                Color = s.Color,
+                Dimensions = s.Dimensions,
+                CategoryId = categoryId,
+                CreatedAt = now.AddMinutes(-i),
+                Images = s.Photos
+                    .Select((photo, index) => new ProductImage
+                    {
+                        ImageUrl = Photo(photo),
+                        IsMain = index == 0,
+                        SortOrder = index
+                    })
+                    .ToList()
+            });
+        }
+
         await context.SaveChangesAsync();
     }
 }

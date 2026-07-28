@@ -132,28 +132,10 @@ public class ProductsService(JyskDbContext context) : IProductsService
             .Take(8)
             .ToListAsync();
 
-        Func<Product, ProductShortResponse> mapToShortDto = p => new ProductShortResponse(
-            p.Id,
-            p.Name,
-            p.Price,
-            p.OldPrice,
-            p.ArticleNumber,
-            p.Brand,
-            p.Color,
-            p.Material,
-            p.Dimensions,
-            p.IsNew,
-            p.CategoryId,
-            p.Category?.Name ?? "Unknown",
-            p.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? p.Images.FirstOrDefault()?.ImageUrl ?? "placeholder.jpg",
-            p.Reviews.Any() ? Math.Round(p.Reviews.Average(r => r.Rating), 1) : 0.0,
-            p.Reviews.Count
-        );
-
         return new HomePageProductsResponse(
-            NewArrivals: newProducts.Select(mapToShortDto).ToList(),
-            OnSale: saleProducts.Select(mapToShortDto).ToList(),
-            Recommended: recommendedProducts.Select(mapToShortDto).ToList()
+            NewArrivals: ProductMapper.ToShort(newProducts),
+            OnSale: ProductMapper.ToShort(saleProducts),
+            Recommended: ProductMapper.ToShort(recommendedProducts)
         );
     }
     public async Task<ProductImage?> AddProductImageAsync(Guid productId, string imageUrl, bool isMain)

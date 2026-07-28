@@ -6,12 +6,12 @@ public record AuthResponse(string Token, AuthUserResponse Customer);
 public record AuthUserResponse(Guid Id, string FirstName, string LastName, string Email, string Role);
 public record UserProfileResponse(Guid Id, string FirstName, string LastName, string Email, string? PhoneNumber, string? Address, DateTime CreatedAt);
 public record ProductShortResponse(
-    Guid Id, string Name, decimal Price, decimal? OldPrice, string? ArticleNumber,
+    Guid Id, string Name, string? Description, decimal Price, decimal? OldPrice, string? ArticleNumber,
     string? Brand, string? Color, string? Material, string? Dimensions, bool IsNew,
     int CategoryId, string CategoryName, string ImageUrl, double AvgRating, int ReviewCount
 );
 public record ProductDetailResponse(
-    Guid Id, string Name, string Description, decimal Price, decimal? OldPrice, int Stock,
+    Guid Id, string Name, string? Description, decimal Price, decimal? OldPrice, int Stock,
     string? ArticleNumber, string? Brand, string? Color, string? Material, string? Dimensions,
     bool IsNew, bool IsActive, int CategoryId, string CategoryName,
     List<ProductImageResponse> Images, List<VariantResponse> Variants,
