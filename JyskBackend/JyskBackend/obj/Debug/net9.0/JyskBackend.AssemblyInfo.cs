@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("JyskBackend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f44fb453b03ff8771972a259cc947c37d07c75a7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+08ee19099f3f45d7bdd0edfc76cd199f54c889eb")]
 [assembly: System.Reflection.AssemblyProductAttribute("JyskBackend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("JyskBackend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
