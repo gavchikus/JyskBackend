@@ -20,6 +20,16 @@ public class JyskDbContext : DbContext
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderItem> OrderItems { get; set; }
 
+    /// <summary>
+    /// SQLite зберігає decimal текстом і через це не вміє ORDER BY по ньому:
+    /// сортування за ціною й вибірка акцій падали з NotSupportedException.
+    /// Зберігаємо гроші як REAL — сортування та порівняння виконує сама база.
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<decimal>().HaveConversion<double>();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -1,6 +1,7 @@
-﻿using JyskBackend.Entities;
+using JyskBackend.Entities;
 using JyskBackend.Interfaces;
 using JyskBackend.Models.Responses;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JyskBackend.Controllers;
@@ -8,10 +9,11 @@ namespace JyskBackend.Controllers;
 [ApiController]
 [Route("api/auth")]
 [Produces("application/json")]
+[AllowAnonymous]
 public class AuthController(IAuthService authService) : ControllerBase
 {
     /// <summary>
-    /// Реєстрація нового покупця в системі магазину JYSK.
+    /// Реєстрація нового покупця в системі магазину TALO.
     /// </summary>
     /// <param name="req">Об'єкт з даними реєстрації (Ім'я, Email, Пароль тощо)</param>
     /// <returns>JWT токен та інформація про створений профіль</returns>
@@ -19,25 +21,27 @@ public class AuthController(IAuthService authService) : ControllerBase
     /// <response code="409">Помилка конфлікту: користувач з таким Email вже існує</response>
     [HttpPost("register")]
     [ProducesResponseType(typeof(AuthResponse), 201)]
+    [ProducesResponseType(400)]
     [ProducesResponseType(409)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest req)
     {
-        var customer = new Customer 
-        { 
-            FirstName = req.FirstName, 
-            LastName = req.LastName, 
-            Email = req.Email, 
-            PhoneNumber = req.PhoneNumber,
-            Role = "Customer"
+        var customer = new Customer
+        {
+            FirstName = req.FirstName,
+            LastName = req.LastName,
+            Email = req.Email,
+            PhoneNumber = req.PhoneNumber
+            // Роль призначає сервіс — з тіла запиту вона не приймається.
         };
 
         var created = await authService.RegisterAsync(customer, req.Password);
         if (created == null) return Conflict(new { message = "Цей Email вже зареєстрований у системі" });
 
         var token = authService.GenerateJwtToken(created);
-        var response = new AuthResponse(token, new AuthUserResponse(created.Id, created.FirstName, created.LastName, created.Email, created.Role));
-        
-        return Created("", response);
+        var response = new AuthResponse(token,
+            new AuthUserResponse(created.Id, created.FirstName, created.LastName, created.Email, created.Role));
+
+        return Created(string.Empty, response);
     }
 
     /// <summary>
@@ -55,7 +59,8 @@ public class AuthController(IAuthService authService) : ControllerBase
         var (customer, token) = await authService.LoginAsync(req.Email, req.Password);
         if (customer == null || token == null) return Unauthorized(new { message = "Неправильний email або пароль" });
 
-        var response = new AuthResponse(token, new AuthUserResponse(customer.Id, customer.FirstName, customer.LastName, customer.Email, customer.Role));
+        var response = new AuthResponse(token,
+            new AuthUserResponse(customer.Id, customer.FirstName, customer.LastName, customer.Email, customer.Role));
         return Ok(response);
     }
 }

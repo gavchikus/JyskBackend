@@ -1,4 +1,4 @@
-﻿using JyskBackend.Entities;
+using JyskBackend.Entities;
 
 namespace JyskBackend.Interfaces;
 
@@ -8,5 +8,5 @@ public interface ICategoriesService
     Task<Category?> GetCategoryByIdAsync(int id);
     Task<Category> CreateCategoryAsync(Category category);
     Task<Category?> UpdateCategoryAsync(int id, Category updatedCategory);
-    Task<bool> DeleteCategoryAsync(int id);
+    Task<DeletionResult> DeleteCategoryAsync(int id);
 }

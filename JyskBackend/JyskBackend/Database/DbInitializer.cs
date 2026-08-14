@@ -1,22 +1,66 @@
 using JyskBackend.Entities;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace JyskBackend.Database;
 
 /// <summary>
-/// Наповнення каталогу демо-даними.
+/// Наповнення бази демо-даними: адміністратор, каталог, вітрини.
 ///
 /// Асортимент меблевий, як у справжньому JYSK: меблі, матраци, текстиль,
 /// килими, освітлення та зберігання. Побутової електроніки, інструментів
 /// і посуду тут свідомо немає.
 ///
-/// Сідер доповнювальний, а не «тільки для порожньої бази»: категорії звіряються
-/// за назвою, товари — за артикулом. Тому нові позиції з'являються при звичайному
-/// перезапуску, без видалення jysk.db, а вже наявні товари не дублюються
-/// й не перезаписуються (правки через адмінку залишаються на місці).
+/// Каталожна частина доповнювальна, а не «тільки для порожньої бази»:
+/// категорії звіряються за назвою, товари — за артикулом. Тому нові позиції
+/// з'являються при звичайному перезапуску, без видалення jysk.db, а вже наявні
+/// товари не дублюються й не перезаписуються.
 /// </summary>
 public static class DbInitializer
 {
+    public static async Task SeedAsync(JyskDbContext context, IConfiguration configuration)
+    {
+        await SeedAdminAsync(context, configuration);
+        await SeedCatalogAsync(context);
+        await SeedShowcasesAsync(context);
+    }
+
+    /// <summary>
+    /// Обліковий запис адміністратора. Пароль береться з конфігурації
+    /// (Seed:AdminPassword або змінна оточення Seed__AdminPassword), у коді його немає.
+    /// </summary>
+    private static async Task SeedAdminAsync(JyskDbContext context, IConfiguration configuration)
+    {
+        var email = (configuration["Seed:AdminEmail"] ?? "admin@talo.ua").Trim().ToLowerInvariant();
+        var password = configuration["Seed:AdminPassword"];
+        if (string.IsNullOrWhiteSpace(password)) return;
+
+        if (await context.Customers.AnyAsync(c => c.Email == email)) return;
+
+        var admin = new Customer
+        {
+            FirstName = "Адміністратор",
+            LastName = "TALO",
+            Email = email,
+            Role = "Admin",
+            CreatedAt = DateTime.UtcNow
+        };
+        admin.PasswordHash = new PasswordHasher<Customer>().HashPassword(admin, password);
+
+        context.Customers.Add(admin);
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedCatalogAsync(JyskDbContext context)
+    {
+        await RemoveRetiredAsync(context);
+        var categories = await EnsureCategoriesAsync(context);
+        await EnsureProductsAsync(context, categories);
+        // Порожні розділи прибираємо в кінці: товари, що лишились, встигають
+        // переїхати у нові категорії, і аж тоді старі виявляються порожніми.
+        await RemoveEmptyRetiredCategoriesAsync(context);
+    }
+
     private const string U = "https://images.unsplash.com/";
     private const string Q = "?auto=format&fit=crop&w=800&q=80";
 
@@ -385,6 +429,85 @@ public static class DbInitializer
                     })
                     .ToList()
             });
+        }
+
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedShowcasesAsync(JyskDbContext context)
+    {
+        if (await context.Rooms.AnyAsync() || await context.Collections.AnyAsync()) return;
+
+        var products = await context.Products.Include(p => p.Category).ToListAsync();
+        if (products.Count == 0) return;
+
+        var rooms = new List<Room>
+        {
+            new()
+            {
+                Name = "Спальня",
+                Description = "Меблі та текстиль для затишної спальні",
+                CoverImageUrl = "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80"
+            },
+            new()
+            {
+                Name = "Вітальня",
+                Description = "Дивани, столики та освітлення для вітальні",
+                CoverImageUrl = "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=1200&q=80"
+            },
+            new()
+            {
+                Name = "Кабінет",
+                Description = "Робоче місце вдома: столи, крісла та світло",
+                CoverImageUrl = "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?auto=format&fit=crop&w=1200&q=80"
+            }
+        };
+
+        context.Rooms.AddRange(rooms);
+
+        var collections = new List<Collection>
+        {
+            new()
+            {
+                Name = "Скандинавський стиль",
+                Description = "Чисті лінії, натуральні матеріали, функціональність",
+                CoverImageUrl = "https://images.unsplash.com/photo-1611269154421-4e27233ac5c7?auto=format&fit=crop&w=1200&q=80"
+            },
+            new()
+            {
+                Name = "Мінімалізм",
+                Description = "Нічого зайвого: спокійні відтінки та прості форми",
+                CoverImageUrl = "https://images.unsplash.com/photo-1594620302200-9a762244a156?auto=format&fit=crop&w=1200&q=80"
+            }
+        };
+
+        context.Collections.AddRange(collections);
+        await context.SaveChangesAsync();
+
+        var byCategory = new (Room Room, string Category)[]
+        {
+            (rooms[0], "Меблі для спальні"),
+            (rooms[1], "Вітальня"),
+            (rooms[2], "Офіс та кабінет")
+        };
+
+        foreach (var (room, categoryName) in byCategory)
+        {
+            foreach (var product in products.Where(p => p.Category.Name == categoryName))
+            {
+                context.RoomProducts.Add(new RoomProduct { RoomId = room.Id, ProductId = product.Id });
+            }
+        }
+
+        // Колекції збираємо «навскіс» категорій — так вони відрізняються від кімнат.
+        foreach (var product in products.Where((_, index) => index % 3 == 0))
+        {
+            context.CollectionProducts.Add(new CollectionProduct { CollectionId = collections[0].Id, ProductId = product.Id });
+        }
+
+        foreach (var product in products.Where((_, index) => index % 4 == 1))
+        {
+            context.CollectionProducts.Add(new CollectionProduct { CollectionId = collections[1].Id, ProductId = product.Id });
         }
 
         await context.SaveChangesAsync();

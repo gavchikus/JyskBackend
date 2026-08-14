@@ -1,31 +1,38 @@
-﻿using JyskBackend.Entities;
+using JyskBackend.Extensions;
 using JyskBackend.Interfaces;
 using JyskBackend.Models.Responses;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JyskBackend.Controllers;
 
 [ApiController]
 [Route("api/products/{productId:guid}/reviews")]
+[Produces("application/json")]
 public class ReviewsController(IReviewsService reviewsService) : ControllerBase
 {
+    /// <summary>Відгуки про товар, найновіші зверху.</summary>
     [HttpGet]
-    public async Task<IActionResult> GetReviews([FromRoute] Guid productId)
-    {
-        var reviews = await reviewsService.GetReviewsByProductIdAsync(productId);
-        var response = reviews.Select(r => new ReviewResponse(
-            r.Id, r.Rating, r.Comment, r.CreatedAt, 
-            r.Customer != null ? $"{r.Customer.FirstName} {r.Customer.LastName.Substring(0,1)}." : "Анонім"
-        )).ToList();
-        return Ok(response);
-    }
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(List<ReviewResponse>), 200)]
+    public async Task<IActionResult> GetReviews([FromRoute] Guid productId) =>
+        Ok(await reviewsService.GetReviewsByProductIdAsync(productId));
 
+    /// <summary>
+    /// Залишити відгук. Автор береться з JWT: раніше CustomerId приходив у тілі
+    /// запиту, і будь-хто міг підписати відгук чужим іменем.
+    /// </summary>
     [HttpPost]
+    [Authorize]
+    [ProducesResponseType(typeof(ReviewResponse), 201)]
+    [ProducesResponseType(401)]
+    [ProducesResponseType(404)]
     public async Task<IActionResult> CreateReview([FromRoute] Guid productId, [FromBody] CreateReviewRequest req)
     {
-        var review = new ProductReview { Rating = req.Rating, Comment = req.Comment, CustomerId = req.CustomerId };
-        var created = await reviewsService.CreateReviewAsync(productId, review);
-        if (created == null) return NotFound("Product not found");
-        return Created("", created);
+        var customerId = User.GetUserId();
+        if (customerId == null) return Unauthorized();
+
+        var created = await reviewsService.CreateReviewAsync(productId, customerId.Value, req);
+        return created == null ? NotFound(new { message = "Товар не знайдено" }) : Created(string.Empty, created);
     }
 }

@@ -10,14 +10,19 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<JyskDbContext>(options =>
-    options.UseSqlite("Data Source=jysk.db"));
+var connectionString = builder.Configuration.GetConnectionString("Default")
+                       ?? "Data Source=jysk.db";
+
+builder.Services.AddDbContext<JyskDbContext>(options => options.UseSqlite(connectionString));
 
 builder.Services.AddScoped<IProductsService, ProductsService>();
 builder.Services.AddScoped<ICategoriesService, CategoriesService>();
 builder.Services.AddScoped<IVariantsService, VariantsService>();
 builder.Services.AddScoped<IReviewsService, ReviewsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IOrdersService, OrdersService>();
+builder.Services.AddScoped<IRoomsService, RoomsService>();
+builder.Services.AddScoped<ICollectionsService, CollectionsService>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -59,7 +64,21 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-var jwtKey = "SuperSecretJyskKey2026_DoNotShareItWithAnyone_MustBeLong";
+// Ключ підпису токенів більше не лежить у коді: Development бере його з
+// appsettings.Development.json, Production — лише зі змінної оточення Jwt__Key
+// або user-secrets. Без ключа застосунок навмисно не стартує.
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var jwtKey = jwtSection["Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+{
+    throw new InvalidOperationException(
+        "Jwt:Key не налаштовано або він коротший за 32 байти. " +
+        "Задайте змінну оточення Jwt__Key чи секрет користувача перед запуском.");
+}
+
+var jwtIssuer = jwtSection["Issuer"] ?? "JyskBackend";
+var jwtAudience = jwtSection["Audience"] ?? "JyskFrontend";
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -69,19 +88,28 @@ builder.Services.AddAuthentication(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateIssuer = false,
-        ValidateAudience = false,
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ClockSkew = TimeSpan.FromMinutes(1)
     };
 });
+
+builder.Services.AddAuthorization();
+
+// Замість AllowAnyOrigin — явний список джерел із конфігурації.
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+                     ?? ["http://localhost:5173"];
 
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        policy.WithOrigins(allowedOrigins).AllowAnyMethod().AllowAnyHeader();
     });
 });
 
@@ -91,11 +119,17 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Jysk API Specification v1");
-    c.RoutePrefix = "swagger"; 
+    c.RoutePrefix = "swagger";
 });
 
 app.UseCors();
-app.UseHttpsRedirection();
+
+// У Development фронт ходить на http-профіль (5118). Примусовий редирект на https
+// ламав би CORS-preflight, тому вмикаємо його лише поза розробкою.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -105,7 +139,9 @@ app.MapControllers();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<JyskDbContext>();
-    await DbInitializer.SeedAsync(dbContext);
+    // Раніше схему треба було накатувати руками — тепер міграції застосовуються на старті.
+    await dbContext.Database.MigrateAsync();
+    await DbInitializer.SeedAsync(dbContext, app.Configuration);
 }
 
 app.Run();
